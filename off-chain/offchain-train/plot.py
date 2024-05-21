@@ -37,7 +37,9 @@ def save_array(x, y1, y2, dir="./results/", name="result"):
 def cal_avg_accuracy(list):
     return sum(list) / len(list)
 
-def compare5_earlystop_twoplot(x1, y1, label1, y2, label2, y3, label3, y4, label4, y5, label5, y6, label6, y7, label7, y8, label8, y9, label9, y10, label10, dir="./results/", name="result", x2=None, x3=None, x4=None, x5=None, x6=None, x7=None, x8=None, x9=None, x10=None):
+def compare5_earlystop_twoplot(x1, y1, label1, y2, label2, y3, label3, y4, label4, y5, label5, y6, label6, y7, label7, y8,
+                               label8, y9, label9, y10, label10, dir="./results/", name="result", x2=None, x3=None, x4=None,
+                               x5=None, x6=None, x7=None, x8=None, x9=None, x10=None):
 
     plt.figure(figsize=(4, 3))
     plt.rcParams['ytick.direction'] = 'in'

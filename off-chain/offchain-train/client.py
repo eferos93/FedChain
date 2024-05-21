@@ -4,12 +4,15 @@ import sys
 
 import torch, copy
 import numpy as np
+from opacus import PrivacyEngine
+
 import dataset
 from server import *
 from torch.utils.data import TensorDataset
 from torch.utils.data import DataLoader
 import torch.nn.functional as F
 import models
+import opacus
 
 import requests
 import schedule
@@ -24,13 +27,15 @@ from attack.lie_attack import *
 
 np.random.seed(33)
 
+
 class Client(object):
 
-    def __init__(self, conf, train_dataset, test_dataset=None, id=-1, global_model=None, device=None, is_malicious=False, backdoor_dataset=None):
+    def __init__(self, conf, train_dataset, test_dataset=None, id=-1, global_model=None, device=None,
+                 is_malicious=False, backdoor_dataset=None):
 
         self.conf = conf
 
-        #model = models.get_model(conf["model_name"], load_from_local=True)
+        # model = models.get_model(conf["model_name"], load_from_local=True)
         if self.conf["dataset"] == "cifar10":
             model = models.VGGCifar(num_classes=10)
         if self.conf["dataset"] == "cifar100":
@@ -46,14 +51,14 @@ class Client(object):
         if self.conf["dataset"] == "sent140":
             model = models.RNN()
         if self.conf["dataset"] == "cora":
-            #model = models.GCN(nfeat=1433, nhid=32, nclass=7, dropout=0.1)
+            # model = models.GCN(nfeat=1433, nhid=32, nclass=7, dropout=0.1)
             model = models.GCN(input_dim=1433, hidden_dim=16, num_classes=7, p=0.5)
         if self.conf["dataset"] == "citeseer":
-            #model = models.GCN(nfeat=3703, nhid=32, nclass=6, dropout=0.1)
+            # model = models.GCN(nfeat=3703, nhid=32, nclass=6, dropout=0.1)
             model = models.GCN(input_dim=3703, hidden_dim=16, num_classes=6, p=0.5)
 
-        #if torch.cuda.is_available():
-            #self.local_model = model.cuda()
+        # if torch.cuda.is_available():
+        # self.local_model = model.cuda()
         self.device = device
 
         if global_model:
@@ -68,23 +73,25 @@ class Client(object):
 
         self.train_dataset = train_dataset
         if train_dataset is not None:
-            self.train_loader = torch.utils.data.DataLoader(self.train_dataset, batch_size=conf["batch_size"],
-                                                        shuffle=True)
+            self.train_loader = torch.utils.data.DataLoader(self.train_dataset,
+                                                            batch_size=conf["batch_size"],
+                                                            shuffle=True)
 
         self.test_dataset = test_dataset
         if test_dataset is not None:
-            self.test_loader = torch.utils.data.DataLoader(self.test_dataset, batch_size=self.conf["batch_size"],
-                                                        shuffle=False)
+            self.test_loader = torch.utils.data.DataLoader(self.test_dataset,
+                                                           batch_size=self.conf["batch_size"],
+                                                           shuffle=False)
 
         self.extractor = None
         self.time_list = []
         if self.conf["exchange"]:
             if self.conf["dataset"] == "shakespeare":
-                 self.extractor = NLPFeatureExtractor(model=self.local_model, dataset_name=self.conf["dataset"])
+                self.extractor = NLPFeatureExtractor(model=self.local_model, dataset_name=self.conf["dataset"])
             elif self.conf["dataset"] == "cora" or self.conf["dataset"] == "citeseer":
-                 self.extractor = GCNFeatureExtractor(model=self.local_model, dataset_name=self.conf["dataset"])
+                self.extractor = GCNFeatureExtractor(model=self.local_model, dataset_name=self.conf["dataset"])
             else:
-                 self.extractor = FeatureExtractor(model=self.local_model, dataset_name=self.conf["dataset"])
+                self.extractor = FeatureExtractor(model=self.local_model, dataset_name=self.conf["dataset"])
 
             self.loss_list = [1000 for _ in range(self.conf["client_num"])]
 
@@ -103,8 +110,9 @@ class Client(object):
         self.is_malicious = is_malicious
         self.backdoor_dataset = backdoor_dataset
         if backdoor_dataset is not None:
-            self.backdoor_train_loader = torch.utils.data.DataLoader(self.backdoor_dataset, batch_size=conf["batch_size"],
-                                                        shuffle=True)
+            self.backdoor_train_loader = torch.utils.data.DataLoader(self.backdoor_dataset,
+                                                                     batch_size=conf["batch_size"],
+                                                                     shuffle=True)
 
     def local_train(self, model, model_round=None):
 
@@ -116,14 +124,14 @@ class Client(object):
         #     self.local_model.state_dict()[name].copy_(param.clone())
         self.local_model.load_state_dict(copy.deepcopy(model.state_dict()))
 
-        if not self.extractor is None:
+        if self.extractor is not None:
             self.extractor.update_model(self.local_model)
             self.extractor.mean_list = np.zeros((1, self.extractor.num_channels))
 
         optimizer = torch.optim.SGD(self.local_model.parameters(), lr=self.conf['lr'], momentum=self.conf['momentum'])
 
-        #graph
-        #optimizer = torch.optim.Adam(self.local_model.parameters(), lr=self.conf['lr'])
+        # graph
+        # optimizer = torch.optim.Adam(self.local_model.parameters(), lr=self.conf['lr'])
 
         criterion = torch.nn.CrossEntropyLoss()
 
@@ -131,17 +139,16 @@ class Client(object):
 
         self.local_model.to(self.device)
 
-        #self.extractor.mean_list = np.zeros((1, self.extractor.num_channels))
+        # self.extractor.mean_list = np.zeros((1, self.extractor.num_channels))
 
         start = time.time()
-
 
         for e in range(epoch):
             self.local_model.train()
             total_loss = 0.0
 
             for batch_id, batch in enumerate(tqdm(self.train_loader, file=sys.stdout)):
-            #for batch_id, batch in enumerate(self.train_loader):
+                # for batch_id, batch in enumerate(self.train_loader):
                 data, target = batch
                 data = data.to(self.device)
                 target = target.to(self.device, dtype=torch.long)
@@ -154,13 +161,13 @@ class Client(object):
                     proximal_term = 0.0
                     for w, w_t in zip(self.local_model.parameters(), model.parameters()):
                         proximal_term += (w - w_t.clone().to(self.device)).norm(2)
-                    #print("{},{}".format(loss, proximal_term))
+                    # print("{},{}".format(loss, proximal_term))
                     loss = loss + (0.1 / 2) * proximal_term
 
                 loss.backward(retain_graph=True)
                 total_loss += loss.item()
 
-                if self.conf['dp'] == True:
+                if self.conf['dp']:
                     torch.nn.utils.clip_grad_norm_(self.local_model.parameters(), max_norm=1.0, norm_type=2)
 
                 optimizer.step()
@@ -171,29 +178,29 @@ class Client(object):
 
             end = time.time()
             acc, total_l = self.eval_model()
-            print("Epoch {} done. Train loss {}. Valid accuracy {}, Consume: {}".format(e, total_loss, acc, end-start))
+            print(
+                "Epoch {} done. Train loss {}. Valid accuracy {}, Consume: {}".format(e, total_loss, acc, end - start))
 
         print("client {} finish local train".format(self.client_id))
 
         if not self.extractor is None:
+            self.extractor.old_all_vectors = self.extractor.mean_list.copy()
+            temp = self.extractor.mean_list.mean(axis=0)
+            self.extractor.mean_list = temp.reshape((1, self.extractor.num_channels))
 
-           self.extractor.old_all_vectors = self.extractor.mean_list.copy()
-           temp = self.extractor.mean_list.mean(axis=0)
-           self.extractor.mean_list = temp.reshape((1, self.extractor.num_channels))
-
-           self.time_list.append(end-start)
-           #print(self.extractor.old_all_vectors.shape)
+            self.time_list.append(end - start)
+            # print(self.extractor.old_all_vectors.shape)
         return acc, total_l
-
 
     def fuse_model_by_teachers(self, models, model_round=None):
         if model_round is not None:
             self.round = model_round + 1
             print("Client {} pull the {}-th round model for collaborative training".format(self.client_id, model_round))
 
-        optimizer = torch.optim.SGD(self.local_model.parameters(), lr=self.conf['distillation_lr'], momentum=self.conf['momentum'])
+        optimizer = torch.optim.SGD(self.local_model.parameters(), lr=self.conf['distillation_lr'],
+                                    momentum=self.conf['momentum'])
 
-        #optimizer = torch.optim.Adam(self.local_model.parameters(), lr=self.conf['distillation_lr']) # shakespeare数据集专用
+        # optimizer = torch.optim.Adam(self.local_model.parameters(), lr=self.conf['distillation_lr']) # shakespeare数据集专用
 
         criterion1 = torch.nn.CrossEntropyLoss()
         criterion2 = torch.nn.KLDivLoss(reduction="batchmean")
@@ -211,7 +218,7 @@ class Client(object):
             total_loss = 0.0
 
             for batch_id, batch in enumerate(tqdm(self.train_loader, file=sys.stdout)):
-            #for batch_id, batch in enumerate(self.train_loader):
+                # for batch_id, batch in enumerate(self.train_loader):
                 data, target = batch
                 data = data.to(self.device)
                 target = target.to(self.device, dtype=torch.long)
@@ -268,7 +275,8 @@ class Client(object):
 
                 if e == 1 and count < 2:
                     print("{}, {}, {}".format(T, alpha, beta))
-                    print("loss1:{}, alpha*loss1:{}; loss2:{}, beta*loss2:{}".format(loss1, alpha * loss1, loss2, beta*loss2))
+                    print("loss1:{}, alpha*loss1:{}; loss2:{}, beta*loss2:{}".format(loss1, alpha * loss1, loss2,
+                                                                                     beta * loss2))
                     count += 1
 
                 loss = alpha * loss1 + beta * loss2
@@ -300,7 +308,7 @@ class Client(object):
         count = 0
 
         for batch_id, batch in enumerate(tqdm(self.test_loader, file=sys.stdout)):
-        #for batch_id, batch in enumerate(self.test_loader):
+            # for batch_id, batch in enumerate(self.test_loader):
             data, target = batch
             dataset_size += data.size()[0]
             data = data.to(self.device)
@@ -348,22 +356,21 @@ class Client(object):
         # acc_val = models.get_accuracy(output, dataset.cora_dataset.y_val, dataset.cora_dataset.idx_val)
         # print("client {}: Valid loss {}. Valid accuracy {}".format(self.client_id, loss_val, acc_val))
 
-
         dataset.cora_dataset.labels = dataset.cora_dataset.labels.to(self.device, dtype=torch.long)
         dataset.cora_dataset.features = dataset.cora_dataset.features.to(self.device)
         dataset.cora_dataset.adj = dataset.cora_dataset.adj.to(self.device)
         output = self.local_model(dataset.cora_dataset.features, dataset.cora_dataset.adj)
         loss_val = torch.nn.functional.cross_entropy(output[dataset.cora_dataset.idx_val],
-                               dataset.cora_dataset.labels[dataset.cora_dataset.idx_val])
+                                                     dataset.cora_dataset.labels[dataset.cora_dataset.idx_val])
         acc_val = accuracy(output[dataset.cora_dataset.idx_val], dataset.cora_dataset.labels[dataset.cora_dataset.idx_val])
         print("client {}: Valid loss {}. Valid accuracy {}".format(self.client_id, loss_val, acc_val))
         return acc_val, loss_val
 
     def save_model(self, dir='./models/clients/', client_id=-1, model_name="model"):
-        if client_id!=-1:
+        if client_id != -1:
             path = os.path.join(dir, 'client' + str(client_id), model_name + '.pth')
         else:
-            path = os.path.join(dir, 'client'+str(self.client_id), model_name + '.pth')
+            path = os.path.join(dir, 'client' + str(self.client_id), model_name + '.pth')
         print("Save model to {}".format(path))
         torch.save(self.local_model, path)
 
@@ -504,15 +511,14 @@ class Client(object):
             acc_val, loss_val = self.eval_model_graph(dataset=dataset)
         return acc_val, loss_val
 
-
     def moon_train(self, model, model_round=None):
         if model_round is not None:
-           self.round = model_round + 1
-           print("Client {} pull the {}-th round model for training".format(self.client_id, model_round))
+            self.round = model_round + 1
+            print("Client {} pull the {}-th round model for training".format(self.client_id, model_round))
 
         self.local_model.load_state_dict(copy.deepcopy(model.state_dict()))
 
-        #optimizer = torch.optim.SGD(self.local_model.parameters(), lr=self.conf['lr'], momentum=self.conf['momentum'])
+        # optimizer = torch.optim.SGD(self.local_model.parameters(), lr=self.conf['lr'], momentum=self.conf['momentum'])
 
         optimizer = torch.optim.Adam(self.local_model.parameters(), lr=self.conf['lr'])
 
@@ -532,7 +538,7 @@ class Client(object):
             total_loss = 0.0
 
             for batch_id, batch in enumerate(tqdm(self.train_loader, file=sys.stdout)):
-            #for batch_id, batch in enumerate(self.train_loader):
+                # for batch_id, batch in enumerate(self.train_loader):
                 data, target = batch
                 data = data.to(self.device)
                 target = target.to(self.device, dtype=torch.long)
@@ -567,10 +573,10 @@ class Client(object):
 
             end = time.time()
             acc, total_l = self.eval_model()
-            print("Epoch {} done. Train loss {}. Valid accuracy {}, Consume: {}".format(e, total_loss, acc, end-start))
+            print(
+                "Epoch {} done. Train loss {}. Valid accuracy {}, Consume: {}".format(e, total_loss, acc, end - start))
 
         print("client {} finish local train".format(self.client_id))
-
 
         self.prev_local_model = self.local_model
         return acc, total_l
@@ -584,7 +590,6 @@ class Client(object):
         # for name, param in model.state_dict().items():
         #     self.local_model.state_dict()[name].copy_(param.clone())
         self.local_model.load_state_dict(model.state_dict())
-
 
         optimizer = torch.optim.Adam(self.local_model.parameters(), lr=self.conf["lr"])
 
@@ -656,14 +661,14 @@ class Client(object):
 
         start = time.time()
 
-
         for e in range(epoch):
             self.local_model.train()
             total_loss = 0.0
 
-            for batch_id, (normal_batch, backdoor_batch) in enumerate(tqdm(zip(self.train_loader, self.backdoor_train_loader), file=sys.stdout)):
-            #for batch_id, batch in enumerate(tqdm(self.train_loader, file=sys.stdout)):
-            #for batch_id, batch in enumerate(self.train_loader):
+            for batch_id, (normal_batch, backdoor_batch) in enumerate(
+                    tqdm(zip(self.train_loader, self.backdoor_train_loader), file=sys.stdout)):
+                #for batch_id, batch in enumerate(tqdm(self.train_loader, file=sys.stdout)):
+                #for batch_id, batch in enumerate(self.train_loader):
                 normal_data, normal_target = normal_batch
                 backdoor_data, backdoor_target = backdoor_batch
 
@@ -678,7 +683,8 @@ class Client(object):
                 backdoor_output = self.local_model(backdoor_data)
 
                 alpha = 0.7
-                loss = alpha * criterion(normal_output, normal_target) + (1 - alpha) * criterion(backdoor_output, backdoor_target)
+                loss = alpha * criterion(normal_output, normal_target) + (1 - alpha) * criterion(backdoor_output,
+                                                                                                 backdoor_target)
 
                 if self.conf["prox"] == True:
                     proximal_term = 0.0
@@ -701,44 +707,45 @@ class Client(object):
 
             end = time.time()
             acc, total_l = self.eval_model()
-            print("Epoch {} done. Train loss {}. Valid accuracy {}, Consume: {}".format(e, total_loss, acc, end-start))
+            print(
+                "Epoch {} done. Train loss {}. Valid accuracy {}, Consume: {}".format(e, total_loss, acc, end - start))
 
         print("client {} finish local train".format(self.client_id))
 
         if not self.extractor is None:
-
-           self.extractor.old_all_vectors = self.extractor.mean_list.copy()
-           temp = self.extractor.mean_list.mean(axis=0)
-           self.extractor.mean_list = temp.reshape((1, self.extractor.num_channels))
-           #print(self.extractor.old_all_vectors.shape)
+            self.extractor.old_all_vectors = self.extractor.mean_list.copy()
+            temp = self.extractor.mean_list.mean(axis=0)
+            self.extractor.mean_list = temp.reshape((1, self.extractor.num_channels))
+            #print(self.extractor.old_all_vectors.shape)
         return acc, total_l
+
 
 class ClientGroup(object):
     def __init__(self, conf, have_server=False):
         self.conf = conf
-        self.test_data_loader=None
-        self.clients= []
+        self.test_data_loader = None
+        self.clients = []
 
         self.have_server = have_server
         self.server = None
 
         self.dataset_allocation()
 
-
     def dataset_allocation(self):
-        data = dataset.GetDataSet(dataset_name=self.conf["dataset"], is_iid=self.conf["iid"], beta=self.conf["niid_beta"])
+        data = dataset.GetDataSet(dataset_name=self.conf["dataset"], is_iid=self.conf["iid"],
+                                  beta=self.conf["niid_beta"])
 
         if self.conf["dataset"] == "cora":
             self.cora_data = data
             for i in range(self.conf["client_num"]):
-                self.clients.append(Client(conf=self.conf, id=i, train_dataset=None, device=torch.device("cuda:"+str(0))))
+                self.clients.append(
+                    Client(conf=self.conf, id=i, train_dataset=None, device=torch.device("cuda:" + str(0))))
             return
 
-
-        self.test_data_loader = torch.utils.data.DataLoader(data.test_dataset, batch_size=self.conf["batch_size"], shuffle=False, num_workers=4)
+        self.test_data_loader = torch.utils.data.DataLoader(data.test_dataset, batch_size=self.conf["batch_size"],
+                                                            shuffle=False, num_workers=4)
         if self.have_server:
-            self.server = Server(self.conf, data.test_dataset, device=torch.device(torch.device("cuda:"+str(0))))
-
+            self.server = Server(self.conf, data.test_dataset, device=torch.device(torch.device("cuda:" + str(0))))
 
         shard_size = data.train_data_size // self.conf["client_num"] // 2
         shard_id = np.random.permutation(data.train_data_size // shard_size)
@@ -759,10 +766,23 @@ class ClientGroup(object):
                 #     else:
                 #         distribution[label] += 1
                 # print("Label Distribution : {}".format(distribution))
-            self.clients.append(Client(conf=self.conf, train_dataset=subset, test_dataset=data.test_dataset, id=i, device=torch.device("cuda:"+str(0))))
+            self.clients.append(Client(conf=self.conf, train_dataset=subset, test_dataset=data.test_dataset, id=i,
+                                       device=torch.device("cuda:" + str(0))))
+
+    def privatize_model(self, model, optimizer, dataloader, epsilon, norm_clipper):
+        privacy_engine = PrivacyEngine()
+        model, optimizer, datalaoder = privacy_engine.make_private(
+            model=model,
+            optimizer=optimizer,
+            data_loader=dataloader,
+            noise_multiplier=epsilon,
+            max_grad_norm=norm_clipper
+        )
+        return model, optimizer, datalaoder
+
 
 if __name__ == "__main__":
-    #torch.cuda.empty_cache()
+    # torch.cuda.empty_cache()
 
     with open("./config/conf.json", 'r') as f:
         conf = json.load(f)
@@ -772,14 +792,12 @@ if __name__ == "__main__":
     clients = client_group.clients
     attack(clients[:2])
 
-
-    #server = client_group.server
+    # server = client_group.server
     # client0 = client_group.clients[0]
     # client1 = client_group.clients[1]
     # client2 = client_group.clients[2]
-    #client3 = client_group.clients[3]
-    #client5 = client_group.clients[5]
-
+    # client3 = client_group.clients[3]
+    # client5 = client_group.clients[5]
 
     # cora_dataset = client_group.cora_data
     # avg = 0.0
@@ -790,13 +808,13 @@ if __name__ == "__main__":
     # print(avg / 10.0)
 
     # start = time.time()
-    #client1.local_train_graph(client1.local_model, cora_dataset)
+    # client1.local_train_graph(client1.local_model, cora_dataset)
     # end = time.time()
     # print(end-start)
     # client1.save_model() # 12.79
     #
     # start = time.time()
-    #client2.local_train_graph(client2.local_model, cora_dataset)
+    # client2.local_train_graph(client2.local_model, cora_dataset)
     # end = time.time()
     # print(end-start)
     # client2.save_model() # 13.65
@@ -810,9 +828,9 @@ if __name__ == "__main__":
     # client1.load_model(os.path.join("./models/clients/client1/", 'model.pth'))
     # client2.load_model(os.path.join("./models/clients/client2/", 'model.pth'))
 
-    #client2.local_train(client2.local_model)
+    # client2.local_train(client2.local_model)
     # client2.load_model(os.path.join("./models/clients/client2/", 'model.pth'))
-    #client2.fuse_model_by_teachers([[client0.client_id, client0.local_model], [client1.client_id, client1.local_model]])
+    # client2.fuse_model_by_teachers([[client0.client_id, client0.local_model], [client1.client_id, client1.local_model]])
     #
     # client2.load_model(os.path.join("./models/clients/client2/", 'model.pth'))
     # client2.fuse_model_by_teachers([[client0.client_id, client0.local_model]])

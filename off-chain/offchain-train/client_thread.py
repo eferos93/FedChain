@@ -119,7 +119,7 @@ def pull_cluster_model(client):
 
         cluster_info = session.get(org_server + get_cluster_api, headers=headers, params=local_cluster_info_cache).content
         cluster_info = json.loads(cluster_info)
-        if (cluster_info["cluster"] == local_cluster_info_cache["cluster"] and cluster_info["round"] <= local_cluster_info_cache["round"]):
+        if cluster_info["cluster"] == local_cluster_info_cache["cluster"] and cluster_info["round"] <= local_cluster_info_cache["round"]:
             print("Cluster still not update: cluster_info:{}; local_cache:{}".format(cluster_info,local_cluster_info_cache))
             time.sleep(1)
             continue
