@@ -719,6 +719,17 @@ class Client(object):
             #print(self.extractor.old_all_vectors.shape)
         return acc, total_l
 
+    def privatize_model(self, model, optimizer, dataloader, epsilon, norm_clipper):
+        privacy_engine = PrivacyEngine()
+        model, optimizer, datalaoder = privacy_engine.make_private(
+            model=model,
+            optimizer=optimizer,
+            data_loader=dataloader,
+            noise_multiplier=epsilon,
+            max_grad_norm=norm_clipper
+        )
+        return model, optimizer, datalaoder
+
 
 class ClientGroup(object):
     def __init__(self, conf, have_server=False):
@@ -768,17 +779,6 @@ class ClientGroup(object):
                 # print("Label Distribution : {}".format(distribution))
             self.clients.append(Client(conf=self.conf, train_dataset=subset, test_dataset=data.test_dataset, id=i,
                                        device=torch.device("cuda:" + str(0))))
-
-    def privatize_model(self, model, optimizer, dataloader, epsilon, norm_clipper):
-        privacy_engine = PrivacyEngine()
-        model, optimizer, datalaoder = privacy_engine.make_private(
-            model=model,
-            optimizer=optimizer,
-            data_loader=dataloader,
-            noise_multiplier=epsilon,
-            max_grad_norm=norm_clipper
-        )
-        return model, optimizer, datalaoder
 
 
 if __name__ == "__main__":
