@@ -376,8 +376,8 @@ class Client(object):
 
     def load_model(self, path):
         print("Load model from {}".format(path))
-        #self.local_model.load_state_dict(torch.load(path))
-        #self.local_model = torch.load(path, map_location=self.device)
+        # self.local_model.load_state_dict(torch.load(path))
+        # self.local_model = torch.load(path, map_location=self.device)
         self.local_model = torch.load(path, map_location=self.device)
 
     def local_train_graph(self, model, dataset, model_round=None):
@@ -721,6 +721,7 @@ class Client(object):
 
     def privatize_model(self, model, optimizer, dataloader, epsilon, norm_clipper):
         privacy_engine = PrivacyEngine()
+        self.
         model, optimizer, datalaoder = privacy_engine.make_private(
             model=model,
             optimizer=optimizer,
