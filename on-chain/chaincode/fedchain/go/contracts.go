@@ -13,15 +13,15 @@
 
 package main
 
+import (
+	"encoding/json"
+	"fmt"
+	"math"
+	"sort"
+	"strconv"
+	"time"
 
-require(
-	encoding/json
-	fmt
-	math
-	sort
-	strconv
-	time
-	github.com/hyperledger/fabric-contract-api-go
+	"github.com/hyperledger/fabric-contract-api-go/contractapi"
 )
 
 var clientNum int

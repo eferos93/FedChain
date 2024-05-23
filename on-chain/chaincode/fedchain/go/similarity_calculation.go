@@ -1,12 +1,14 @@
 package main
 
-require(
-	encoding/json
-	strconv
-	fmt
-	math
-	github.com/hyperledger/fabric-contract-api-go
-	sort
+import (
+	"encoding/json"
+	"strconv"
+
+	//"fmt"
+	"math"
+
+	"github.com/hyperledger/fabric-contract-api-go/contractapi"
+	//"sort"
 )
 
 type argsort struct {
@@ -26,20 +28,20 @@ func (a argsort) Swap(i, j int) {
 	a.inds[i], a.inds[j] = a.inds[j], a.inds[i]
 }
 
-func (s *SmartContract) UpdateGlobalSimilarityMatrix(ctx contractapi.TransactionContextInterface) ([][]float32, error){
+func (s *SmartContract) UpdateGlobalSimilarityMatrix(ctx contractapi.TransactionContextInterface) ([][]float32, error) {
 	var sparseMatrix [][]float32
 	globalSimilarityMatrix, err := s.GetGlobalSimilarityMatrix(ctx)
 
-	for i := 0; i < clientNum; i++{
+	for i := 0; i < clientNum; i++ {
 		localModelMetaInfo, _ := s.GetLocalModelMetaInfo(ctx, "org"+strconv.Itoa(i))
 		sparseMatrix = append(sparseMatrix, localModelMetaInfo.SparseVector)
 	}
 
-	for i := 0; i < clientNum; i++{
-		for j := i+1; j < clientNum; j++{
+	for i := 0; i < clientNum; i++ {
+		for j := i + 1; j < clientNum; j++ {
 			similarity := CalculateSimilarity(sparseMatrix[i], sparseMatrix[j])
 			globalSimilarityMatrix.SimilarityMatrix[i][j] = similarity
-			globalSimilarityMatrix.SimilarityMatrix[j][i] = similarity 
+			globalSimilarityMatrix.SimilarityMatrix[j][i] = similarity
 		}
 	}
 
@@ -69,13 +71,13 @@ func CalculateSimilarity(v1 []float32, v2 []float32) float32 {
 	// }
 
 	//distance
-	if len(v1) == 0 || len(v2) == 0{
+	if len(v1) == 0 || len(v2) == 0 {
 		return 1000
 	}
 
 	result := 0.0
-	for i := 0; i<len(v1); i++{
-		result += math.Pow(float64(v1[i] - v2[i]), 2)
+	for i := 0; i < len(v1); i++ {
+		result += math.Pow(float64(v1[i]-v2[i]), 2)
 	}
 
 	result = math.Sqrt(result)
