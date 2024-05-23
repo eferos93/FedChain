@@ -1,12 +1,12 @@
 package main
 
-import (
-	"encoding/json"
-	"strconv"
-	"fmt"
-	"math"
-	"github.com/hyperledger/fabric-contract-api-go/contractapi"
-	"sort"
+require(
+	encoding/json
+	strconv
+	fmt
+	math
+	github.com/hyperledger/fabric-contract-api-go
+	sort
 )
 
 type argsort struct {

@@ -1,9 +1,15 @@
 package main
 
-import (
-	"encoding/json"
-	"github.com/hyperledger/fabric-contract-api-go/contractapi"
+require(
+	encoding/json
+	github.com/hyperledger/fabric-contract-api-go
 )
+// import (
+// 	"encoding/json"
+// 	"github.com/hyperledger/fabric-contract-api-go"
+//)
+
+
 
 type SubjectAttribute struct {
 	Org string `json:"org"`

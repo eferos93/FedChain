@@ -721,7 +721,7 @@ class Client(object):
 
     def privatize_model(self, model, optimizer, dataloader, epsilon, norm_clipper):
         privacy_engine = PrivacyEngine()
-        self.
+
         model, optimizer, datalaoder = privacy_engine.make_private(
             model=model,
             optimizer=optimizer,
