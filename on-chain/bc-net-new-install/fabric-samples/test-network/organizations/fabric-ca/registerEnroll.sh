@@ -89,7 +89,14 @@ function createOrg1() {
 
   generateMspAndCert 0
   generateMspAndCert 1
-
+  generateMspAndCert 2
+  generateMspAndCert 3
+  generateMspAndCert 4
+  generateMspAndCert 5
+  generateMspAndCert 6
+  generateMspAndCert 7
+  generateMspAndCert 8
+  generateMspAndCert 9
 
   # infoln "Generating the peer0 msp"
   # set -x
