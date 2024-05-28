@@ -1,7 +1,8 @@
-#/bin/bash
+chaincodeFolder=$1
 
-. ${PWD}/organizations/fabric-ca/registerEnroll.sh
+echo $chaincodeFolder
 
-createOrg1
+docker volume prune
 
-./netowrk.sh up
+source network.sh up createChannel -ca
+source network.sh deployCC -ccn ${chaincodeFolder} -ccp ../../../chaincode/${chaincodeFolder}/go -ccl go
