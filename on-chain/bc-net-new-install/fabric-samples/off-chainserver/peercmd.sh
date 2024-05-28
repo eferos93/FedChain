@@ -7,7 +7,7 @@ ORDERER_TLS_ROOTCERT_FILE=${CONFIG_ROOT}/crypto/ordererOrganizations/example.com
 
 CHANNEL_NAME=mychannel
 CHAINCODE_NAME=fedchain
-CHAINCODE_PATH=../../../chaincode/${CHAINCODE_NAME}/go/
+CHAINCODE_PATH=github.com/chaincode/${CHAINCODE_NAME}/go/
 
 if [ "$1" == "getOrg" ]; then
    	     peer chaincode query \
